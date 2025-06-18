@@ -125,7 +125,7 @@
         const statusDiv = document.getElementById('status');
         const galleryDiv = document.getElementById('gallery');
         const galleryPlaceholder = document.getElementById('gallery-placeholder');
-        // ADDED: Modal DOM elements
+        // Modal DOM elements
         const modal = document.getElementById('modal');
         const modalContent = document.getElementById('modal-content');
         const modalImg = document.getElementById('modal-img');
@@ -146,10 +146,7 @@
                 galleryDiv.style.display = 'grid';
                 photos.forEach(photo => {
                     const imgContainer = document.createElement('div');
-                    // ADDED: Cursor pointer to indicate it's clickable
                     imgContainer.className = 'aspect-square bg-gray-100 rounded-lg overflow-hidden shadow-sm hover:shadow-xl transition-shadow duration-300 cursor-pointer';
-
-                    // ADDED: Store original filename in a data attribute
                     imgContainer.dataset.filename = photo.originalName;
 
                     const img = document.createElement('img');
@@ -161,7 +158,6 @@
                     imgContainer.appendChild(img);
                     galleryDiv.appendChild(imgContainer);
 
-                    // ADDED: Add click listener to each image container
                     imgContainer.addEventListener('click', handleThumbnailClick);
                 });
             } else {
@@ -170,24 +166,21 @@
             }
         };
 
-        // ADDED: New function to handle clicking on a thumbnail
         const handleThumbnailClick = async (event) => {
             const container = event.currentTarget;
             const filename = container.dataset.filename;
 
-            // Show the modal with a loading state
             modal.classList.remove('hidden');
             modalImg.style.display = 'none';
             modalLoading.style.display = 'block';
+            modalLoading.textContent = 'Loading high-resolution image...'; // Reset loading text
 
             try {
-                // Fetch the secure URL for the original, full-resolution image
                 const response = await fetch(`${FUNCTION_APP_URL}/api/get-photo/${encodeURIComponent(filename)}`);
                 if (!response.ok) throw new Error(`Could not get photo URL. Status: ${response.status}`);
 
                 const data = await response.json();
 
-                // Set the image source and show it
                 modalImg.src = data.url;
                 modalImg.onload = () => {
                     modalLoading.style.display = 'none';
@@ -200,20 +193,86 @@
         };
 
         const getPhotos = async () => {
-            // ... (this function's code is unchanged)
+            setStatus('Refreshing gallery...');
+            try {
+                const response = await fetch(`${FUNCTION_APP_URL}/api/get-photos`);
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                const photos = await response.json();
+                renderPhotos(photos);
+                setStatus('Gallery updated.');
+            } catch (error) {
+                console.error('Error fetching photos:', error);
+                setStatus('Could not load gallery.', true);
+            }
         };
 
         const handleFileUpload = async (file) => {
-            // ... (this function's code is unchanged)
+            if (!file) {
+                setStatus('No file selected.', true);
+                return;
+            }
+            if (!file.type.startsWith('image/')) {
+                setStatus('Only image files are allowed.', true);
+                return;
+            }
+
+            setStatus(`Getting upload URL for ${file.name}...`);
+
+            try {
+                const sasResponse = await fetch(`${FUNCTION_APP_URL}/api/get-upload-url?filename=${encodeURIComponent(file.name)}`);
+                if (!sasResponse.ok) throw new Error(`Could not get SAS URL. Status: ${sasResponse.status}`);
+                const { url } = await sasResponse.json();
+
+                setStatus(`Uploading ${file.name}...`);
+                const uploadResponse = await fetch(url, {
+                    method: 'PUT',
+                    body: file,
+                    headers: { 'x-ms-blob-type': 'BlockBlob', 'Content-Type': file.type }
+                });
+
+                if (!uploadResponse.ok) throw new Error(`Upload failed. Status: ${uploadResponse.status}`);
+
+                setStatus('Upload successful! Refreshing gallery in 3 seconds...');
+
+                setTimeout(() => {
+                    getPhotos();
+                }, 3000);
+
+            } catch (error) {
+                console.error('Upload process failed:', error);
+                setStatus(`Upload failed: ${error.message}`, true);
+            }
         };
 
         // --- EVENT LISTENERS ---
-        // (Drag & drop and file input listeners are unchanged)
+        dropzone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dropzone.classList.add('dropzone-active');
+        });
+        dropzone.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dropzone.classList.remove('dropzone-active');
+        });
+        dropzone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dropzone.classList.remove('dropzone-active');
+            const files = e.dataTransfer.files;
+            if (files.length) {
+                handleFileUpload(files[0]);
+            }
+        });
 
-        // ADDED: Event listeners for closing the modal
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length) {
+                handleFileUpload(e.target.files[0]);
+            }
+        });
+
         modalClose.addEventListener('click', () => modal.classList.add('hidden'));
         modal.addEventListener('click', (e) => {
-            // Close if the user clicks on the dark overlay, but not on the image itself
             if (e.target === modal) {
                 modal.classList.add('hidden');
             }
